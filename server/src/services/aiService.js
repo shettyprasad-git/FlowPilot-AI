@@ -3,8 +3,8 @@ const fallbackLibrary = {
     `Here is a practical FlowPilot response:\n\n1. Clarify the outcome: ${input.slice(0, 120)}\n2. Break it into 3 focused tasks.\n3. Schedule the hardest task first.\n4. Review progress at the end of the day.\n\nAI mode: fallback demo response.`,
   summarize: (input) =>
     `Summary:\n${input.slice(0, 220)}${input.length > 220 ? "..." : ""}\n\nKey points:\n- Main idea identified from the pasted content.\n- Important decisions and study/work themes should be reviewed.\n- Convert unclear items into follow-up questions.\n\nAction items:\n- Create 2-3 tasks from this note.\n- Review the summary once today.\n- Save one flashcard for the most important concept.`,
-  email: (input) =>
-    `Subject: Request Regarding ${input.slice(0, 48) || "the Opportunity"}\n\nDear Sir/Madam,\n\nI hope you are doing well. I am writing to request your support regarding ${input || "the matter discussed"}. I would appreciate the opportunity to share the required details and proceed professionally.\n\nThank you for your time and consideration.\n\nBest regards,\nYour Name`,
+  email: (input, userName) =>
+    `Subject: Request Regarding ${input.slice(0, 48) || "the Opportunity"}\n\nDear Sir/Madam,\n\nI hope you are doing well. I am writing to request your support regarding ${input || "the matter discussed"}. I would appreciate the opportunity to share the required details and proceed professionally.\n\nThank you for your time and consideration.\n\nBest regards,\n${userName || "User"}`,
   workflow: (input) =>
     `Suggested workflow:\n\nToday:\n- List all commitments related to: ${input || "your goal"}.\n- Pick the top 3 urgent tasks.\n- Block 90 minutes for deep work.\n\nThis week:\n- Complete the highest-impact deliverable first.\n- Use short review sessions every evening.\n- Keep one buffer slot for unexpected work.\n\nProductivity tip:\nProtect your first work session from notifications.`,
   planner: (input) =>
@@ -27,25 +27,26 @@ const ROUTER_DEFAULTS = {
   planner: "Llama"
 };
 
-function buildPrompt(feature, input, preferences) {
+function buildPrompt(feature, input, preferences, userName = "User") {
   const { goals, workStyle, tone, focusArea, activeHours } = preferences || {};
   
   const persona = `You are FlowPilot AI, a productivity assistant.
 User Profile:
+- Name: ${userName}
 - Goals: ${goals || "General productivity"}
 - Work Style: ${workStyle || "Focused"}
 - Tone: ${tone || "Professional"}
 - Focus Area: ${focusArea || "General"}
 - Active Hours: ${activeHours || "Standard"}`;
-
+ 
   const system = {
     chat: `${persona}\nProvide a concise, helpful response.`,
     summarize: `${persona}\nSummarize the content into a summary, key points, action items, and flashcard ideas.`,
-    email: `${persona}\nGenerate a clear professional email for the user's requirement matching their preferred tone.`,
+    email: `${persona}\nGenerate a clear email for the user's requirement matching their preferred tone. The email must be signed off with the user's name: ${userName}.`,
     workflow: `${persona}\nCreate a practical workflow plan with schedule, task breakdown, and productivity improvements.`,
     planner: `${persona}\nGenerate a daily schedule with focus blocks, priorities, and break planning based on the user's active hours and deadlines.`
   };
-
+ 
   return `${system[feature]}\n\nUser input:\n${input}\n\nResponse:`;
 }
 
@@ -57,12 +58,12 @@ function parseHuggingFaceResponse(data) {
   return JSON.stringify(data);
 }
 
-export async function generateAI(feature, input, modelPreference = "Auto", userPreferences = {}) {
+export async function generateAI(feature, input, modelPreference = "Auto", userPreferences = {}, userName = "User") {
   const cleanInput = String(input || "").trim();
   const fallback = fallbackLibrary[feature] || fallbackLibrary.chat;
 
   if (!process.env.HF_API_TOKEN) {
-    return { text: fallback(cleanInput), provider: "fallback" };
+    return { text: fallback(cleanInput, userName), provider: "fallback" };
   }
 
   const controller = new AbortController();
@@ -79,7 +80,7 @@ export async function generateAI(feature, input, modelPreference = "Auto", userP
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        inputs: buildPrompt(feature, cleanInput, userPreferences),
+        inputs: buildPrompt(feature, cleanInput, userPreferences, userName),
         parameters: {
           max_new_tokens: 420,
           temperature: 0.65,
@@ -102,7 +103,7 @@ export async function generateAI(feature, input, modelPreference = "Auto", userP
   } catch (error) {
     console.error("Hugging Face API Error:", error.message);
     return {
-      text: fallback(cleanInput),
+      text: fallback(cleanInput, userName),
       provider: "fallback"
     };
   } finally {

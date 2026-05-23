@@ -23,15 +23,22 @@ async function handleAI(req, res, next, feature) {
     if (!prompt.trim()) return res.status(400).json({ message: "Prompt is required" });
 
     let preferences = {};
+    let userName = "User";
     if (req.app.locals.useMemory) {
       const user = memoryStore.users.find((u) => u.id === req.userId);
-      if (user) preferences = user.preferences;
+      if (user) {
+        preferences = user.preferences;
+        userName = user.name || "User";
+      }
     } else {
       const user = await User.findById(req.userId);
-      if (user) preferences = user.preferences;
+      if (user) {
+        preferences = user.preferences;
+        userName = user.name || "User";
+      }
     }
 
-    const result = await generateAI(feature, prompt, model, preferences);
+    const result = await generateAI(feature, prompt, model, preferences, userName);
     await saveHistory(req, feature, prompt, result.text);
 
     if (feature === "summarize") {

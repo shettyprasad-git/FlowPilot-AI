@@ -254,6 +254,177 @@ function animate(from, to, options) {
   return { stop: () => cancelAnimationFrame(frame) };
 }
 
+function parseTasksFromText(text) {
+  if (!text) return [];
+  const lines = text.split("\n");
+  const parsed = [];
+  
+  for (let line of lines) {
+    line = line.trim();
+    
+    // Match bullet points: - [ ] Task, - Task, * Task, 1. Task, etc.
+    const bulletMatch = line.match(/^[-*+•]\s*(?:\[\s*\])?\s*(.+)/);
+    const numberMatch = line.match(/^\d+\.\s*(?:\[\s*\])?\s*(.+)/);
+    // Match daily schedule time blocks or section tasks
+    const timeBlockMatch = line.match(/^(?:\d{1,2}:\d{2}\s*(?:AM|PM)?\s*-\s*\d{1,2}:\d{2}\s*(?:AM|PM)?|Focus Block|Midday|Wrap-up|Morning|Evening|Afternoon)[:\s-]+\s*(.+)/i);
+    
+    let taskTitle = "";
+    if (bulletMatch) {
+      taskTitle = bulletMatch[1].trim();
+    } else if (numberMatch) {
+      taskTitle = numberMatch[1].trim();
+    } else if (timeBlockMatch) {
+      taskTitle = timeBlockMatch[1].trim();
+    }
+    
+    if (taskTitle) {
+      taskTitle = taskTitle.replace(/[*_`#]/g, "").trim();
+      
+      if (
+        taskTitle.length > 3 &&
+        taskTitle.length < 150 &&
+        !taskTitle.toLowerCase().includes("workflow") &&
+        !taskTitle.toLowerCase().includes("schedule") &&
+        !taskTitle.toLowerCase().includes("daily planner") &&
+        !taskTitle.toLowerCase().startsWith("focus block") &&
+        !taskTitle.toLowerCase().startsWith("wrap-up") &&
+        !taskTitle.toLowerCase().includes("productivity tip")
+      ) {
+        parsed.push({
+          title: taskTitle,
+          priority: "Medium",
+          status: "Pending",
+          category: "AI Generated",
+          estimateMinutes: 45
+        });
+      }
+    }
+  }
+  
+  const unique = [];
+  const seen = new Set();
+  for (const t of parsed) {
+    const key = t.title.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(t);
+    }
+  }
+  return unique;
+}
+
+function DetectedTasksWidget({ text, setTasks }) {
+  const [parsedTasks, setParsedTasks] = useState([]);
+  const [addedTasks, setAddedTasks] = useState(new Set());
+  const [isAddingBulk, setIsAddingBulk] = useState(false);
+  
+  useEffect(() => {
+    setParsedTasks(parseTasksFromText(text));
+    setAddedTasks(new Set());
+  }, [text]);
+  
+  if (!parsedTasks.length) return null;
+  
+  async function handleAddTask(task, index) {
+    try {
+      const created = await apiRequest("/tasks", {
+        method: "POST",
+        body: JSON.stringify(task)
+      });
+      setTasks((prev) => [created, ...prev]);
+      setAddedTasks((prev) => {
+        const next = new Set(prev);
+        next.add(index);
+        return next;
+      });
+      toast.success("Task added to Task Board!");
+    } catch (err) {
+      toast.error(`Failed to add task: ${err.message}`);
+    }
+  }
+  
+  async function handleAddAll() {
+    setIsAddingBulk(true);
+    const toastId = toast.loading("Adding all tasks to Task Board...");
+    try {
+      let count = 0;
+      const newTasks = [];
+      for (let i = 0; i < parsedTasks.length; i++) {
+        if (!addedTasks.has(i)) {
+          const created = await apiRequest("/tasks", {
+            method: "POST",
+            body: JSON.stringify(parsedTasks[i])
+          });
+          newTasks.push(created);
+          addedTasks.add(i);
+          count++;
+        }
+      }
+      if (count > 0) {
+        setTasks((prev) => [...newTasks, ...prev]);
+        setAddedTasks(new Set(addedTasks));
+        toast.success(`Added ${count} tasks to board!`, { id: toastId });
+      } else {
+        toast.info("All tasks were already added.", { id: toastId });
+      }
+    } catch (err) {
+      toast.error(`Failed to add all tasks: ${err.message}`, { id: toastId });
+    } finally {
+      setIsAddingBulk(false);
+    }
+  }
+  
+  return (
+    <div className="mt-6 rounded-xl border border-white/5 bg-white/[0.02] p-4 backdrop-blur-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <h4 className="flex items-center gap-2 text-sm font-semibold text-cyan-300">
+          <ClipboardList size={16} /> Detected Tasks ({parsedTasks.length})
+        </h4>
+        <button 
+          onClick={handleAddAll} 
+          disabled={isAddingBulk || addedTasks.size === parsedTasks.length}
+          className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-300 transition hover:bg-cyan-500/20 disabled:opacity-50"
+        >
+          Add All to Board
+        </button>
+      </div>
+      <div className="grid gap-2 max-h-60 overflow-y-auto pr-1">
+        {parsedTasks.map((task, index) => {
+          const isAdded = addedTasks.has(index);
+          return (
+            <div key={index} className="flex items-center justify-between gap-3 rounded-lg bg-black/20 p-2.5 text-xs border border-white/5 hover:border-white/10 transition">
+              <span className="truncate text-slate-200">{task.title}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <select 
+                  value={task.priority} 
+                  onChange={(e) => {
+                    const updated = [...parsedTasks];
+                    updated[index].priority = e.target.value;
+                    setParsedTasks(updated);
+                  }}
+                  className="bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-slate-300 outline-none"
+                  disabled={isAdded}
+                >
+                  <option>Low</option>
+                  <option>Medium</option>
+                  <option>High</option>
+                </select>
+                <button 
+                  onClick={() => handleAddTask(task, index)} 
+                  disabled={isAdded}
+                  className={`rounded px-2.5 py-1 font-semibold transition ${isAdded ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/30"}`}
+                >
+                  {isAdded ? "Added" : "+ Add"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProgressRing({ radius, stroke, progress }) {
   const normalizedRadius = radius - stroke * 2;
   const circumference = normalizedRadius * 2 * Math.PI;
@@ -319,7 +490,7 @@ function Shell({ user, onLogout, onUpdateUser }) {
   const stats = useMemo(() => {
     const completed = tasks.filter((task) => task.status === "Completed").length;
     const rate = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
-    const score = Math.min(98, 55 + rate + Math.min(tasks.length * 3, 24));
+    const score = tasks.length ? Math.min(98, 55 + Math.round(rate * 0.25) + Math.min(tasks.length * 2, 18)) : 0;
     return { completed, rate, score, total: tasks.length };
   }, [tasks]);
 
@@ -397,12 +568,12 @@ function Shell({ user, onLogout, onUpdateUser }) {
         <section className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 xl:p-10">
           <div className="mx-auto max-w-6xl">
             {view === "dashboard" && <Dashboard stats={stats} tasks={tasks} notes={notes} loading={loading} setView={setView} />}
-            {view === "assistant" && <AIComposer feature="chat" title="AI Workspace Assistant" placeholder="Ask FlowPilot to plan, summarize, prioritize, or brainstorm..." suggestions={aiSuggestions.chat} />}
+            {view === "assistant" && <AIComposer feature="chat" title="AI Workspace Assistant" placeholder="Ask FlowPilot to plan, summarize, prioritize, or brainstorm..." suggestions={aiSuggestions.chat} setTasks={setTasks} />}
             {view === "tasks" && <Tasks tasks={tasks} setTasks={setTasks} loading={loading} />}
             {view === "notes" && <Notes notes={notes} setNotes={setNotes} loading={loading} />}
-            {view === "email" && <AIComposer feature="email" title="AI Email Generator" placeholder="Example: Write an internship application email for a frontend role..." suggestions={aiSuggestions.email} />}
-            {view === "workflow" && <AIComposer feature="workflow" title="AI Workflow Suggestions" placeholder="Example: I am preparing for exams and internship applications..." suggestions={aiSuggestions.workflow} />}
-            {view === "planner" && <Planner />}
+            {view === "email" && <AIComposer feature="email" title="AI Email Generator" placeholder="Example: Write an internship application email for a frontend role..." suggestions={aiSuggestions.email} setTasks={setTasks} />}
+            {view === "workflow" && <AIComposer feature="workflow" title="AI Workflow Suggestions" placeholder="Example: I am preparing for exams and internship applications..." suggestions={aiSuggestions.workflow} setTasks={setTasks} />}
+            {view === "planner" && <Planner setTasks={setTasks} />}
             {view === "settings" && <Settings user={user} onUpdateUser={onUpdateUser} />}
           </div>
         </section>
@@ -639,6 +810,36 @@ function TaskCard({ task, onStatus, onDelete, compact }) {
 function Notes({ notes, setNotes, loading }) {
   const [form, setForm] = useState({ title: "", content: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+
+  async function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setIsParsing(true);
+    const toastId = toast.loading(`Parsing "${file.name}"...`);
+    
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      const data = await apiRequest("/notes/parse", {
+        method: "POST",
+        body: formData
+      });
+      
+      setForm({
+        title: data.title || file.name.split(".")[0],
+        content: data.text || ""
+      });
+      toast.success("File parsed successfully! You can now edit and generate insights.", { id: toastId });
+    } catch (err) {
+      toast.error(`Parsing failed: ${err.message}`, { id: toastId });
+    } finally {
+      setIsParsing(false);
+      e.target.value = null; // Clear file input
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -672,11 +873,25 @@ function Notes({ notes, setNotes, loading }) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
       <Header eyebrow="Smart learning" title="AI Note Summarizer" />
-      <Panel title="Paste raw notes">
+      <Panel title="Notes content">
         <form onSubmit={submit} className="grid gap-4">
-          <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Lecture or meeting title" className="bg-black/20" />
-          <textarea required rows={6} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Paste raw notes, transcripts, or meeting logs here..." className="bg-black/20" />
-          <button className="primary-button justify-self-start shadow-[0_0_15px_rgba(103,232,249,0.2)]" disabled={isSubmitting}>
+          <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
+            <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Lecture or meeting title" className="bg-black/20 flex-grow" />
+            
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:border-cyan-500/30">
+              <FileText size={16} className="text-cyan-400" />
+              <span>{isParsing ? "Parsing..." : "Upload File (PDF/Word/Image)"}</span>
+              <input 
+                type="file" 
+                accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg" 
+                className="hidden" 
+                onChange={handleFileUpload} 
+                disabled={isParsing} 
+              />
+            </label>
+          </div>
+          <textarea required rows={8} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Paste raw notes, transcripts, or meeting logs here, or upload a PDF/Word/Image file..." className="bg-black/20" />
+          <button className="primary-button justify-self-start shadow-[0_0_15px_rgba(103,232,249,0.2)]" disabled={isSubmitting || isParsing}>
             {isSubmitting ? <><Bot className="mr-2 animate-pulse" size={18} /> Analyzing...</> : <><Sparkles className="mr-2" size={18} /> Generate Insights</>}
           </button>
         </form>
@@ -756,12 +971,32 @@ function StructuredList({ title, items = [], icon: Icon, color }) {
   );
 }
 
-function AIComposer({ feature, title, placeholder, suggestions }) {
+function AIComposer({ feature, title, placeholder, suggestions, setTasks }) {
   const [prompt, setPrompt] = useState("");
   const [result, setResult] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("Auto");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  function handleSendEmail() {
+    if (!result) return;
+    let subject = "Generated Email from FlowPilot AI";
+    let body = result;
+    
+    // Attempt to extract Subject line if present in output
+    const lines = result.split("\n");
+    const subjectLineIndex = lines.findIndex(line => /^subject:/i.test(line));
+    if (subjectLineIndex !== -1) {
+      subject = lines[subjectLineIndex].replace(/^subject:\s*/i, "").trim();
+      body = lines.filter((_, idx) => idx !== subjectLineIndex).join("\n").trim();
+    } else if (lines[0] && lines[0].length < 60) {
+      subject = lines[0].replace(/[*_#]/g, "").trim();
+      body = lines.slice(1).join("\n").trim();
+    }
+    
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(gmailUrl, "_blank");
+  }
 
   async function submit(event, presetPrompt) {
     if (event) event.preventDefault();
@@ -838,9 +1073,20 @@ function AIComposer({ feature, title, placeholder, suggestions }) {
         </div>
         
         <Panel title={provider ? `Result (via ${provider})` : "AI Output"} className="relative min-h-[400px]">
+          {feature === "email" && result && (
+            <button 
+              onClick={handleSendEmail} 
+              className="absolute top-4 right-4 flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-1.5 text-xs font-semibold text-cyan-300 transition hover:bg-cyan-500/20"
+            >
+              <Mail size={14} /> Send via Gmail
+            </button>
+          )}
           {result ? (
             <div className="prose prose-invert max-w-none">
               <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-slate-200">{result}</p>
+              {setTasks && (feature === "workflow" || feature === "chat") && (
+                <DetectedTasksWidget text={result} setTasks={setTasks} />
+              )}
             </div>
           ) : (
             <div className="absolute inset-0 grid place-items-center p-6">
@@ -952,7 +1198,7 @@ function Settings({ user, onUpdateUser }) {
   );
 }
 
-function Planner() {
+function Planner({ setTasks }) {
   const [form, setForm] = useState({ deadline: "End of week", goal: "Complete the landing page frontend" });
   const [result, setResult] = useState("");
   const [provider, setProvider] = useState("");
@@ -1003,6 +1249,9 @@ function Planner() {
           {result ? (
             <div className="prose prose-invert max-w-none">
               <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-slate-200">{result}</p>
+              {setTasks && (
+                <DetectedTasksWidget text={result} setTasks={setTasks} />
+              )}
             </div>
           ) : (
              <div className="absolute inset-0 grid place-items-center p-6">

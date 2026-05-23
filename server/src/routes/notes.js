@@ -1,8 +1,10 @@
 import express from "express";
+import multer from "multer";
 import Note from "../models/Note.js";
 import { createId, memoryStore } from "../lib/memoryStore.js";
 import { requireAuth } from "../middleware/auth.js";
 import { generateAI, parseNoteAI } from "../services/aiService.js";
+import { parseFile } from "../lib/parser.js";
 
 const router = express.Router();
 router.use(requireAuth);
@@ -65,6 +67,23 @@ router.delete("/:id", async (req, res, next) => {
     const note = await Note.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!note) return res.status(404).json({ message: "Note not found" });
     res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+const upload = multer({
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+});
+
+router.post("/parse", upload.single("file"), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+    const text = await parseFile(req.file.buffer, req.file.mimetype);
+    let title = req.file.originalname || "Parsed Document";
+    const dotIndex = title.lastIndexOf(".");
+    if (dotIndex !== -1) title = title.substring(0, dotIndex);
+    res.json({ title, text: text.trim() });
   } catch (error) {
     next(error);
   }

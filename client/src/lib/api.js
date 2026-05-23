@@ -9,13 +9,19 @@ export class ApiError extends Error {
 
 export async function apiRequest(path, options = {}) {
   const token = localStorage.getItem("flowpilot_token");
+  
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {})
+  };
+
+  if (!(options.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
-    }
+    headers
   });
 
   if (response.status === 204) return null;
