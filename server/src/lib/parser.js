@@ -1,6 +1,6 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const pdf = require("pdf-parse");
+const { PDFParse } = require("pdf-parse");
 const mammoth = require("mammoth");
 const Tesseract = require("tesseract.js");
 
@@ -13,8 +13,13 @@ const Tesseract = require("tesseract.js");
  */
 export async function parseFile(buffer, mimeType) {
   if (mimeType === "application/pdf") {
-    const data = await pdf(buffer);
-    return data.text || "";
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const result = await parser.getText();
+      return result.text || "";
+    } finally {
+      await parser.destroy().catch(() => {});
+    }
   }
   
   if (
