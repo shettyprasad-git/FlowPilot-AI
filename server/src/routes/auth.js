@@ -9,7 +9,7 @@ const router = express.Router();
 
 router.post("/register", async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, preferences } = req.body;
     if (!name || !email || !password || password.length < 6) {
       return res.status(400).json({ message: "Name, valid email, and 6+ character password are required" });
     }
@@ -17,11 +17,20 @@ router.post("/register", async (req, res, next) => {
     const normalizedEmail = email.toLowerCase().trim();
     const passwordHash = await bcrypt.hash(password, 10);
 
+    const defaultPrefs = { goals: "", workStyle: "Focused", tone: "Professional", focusArea: "General", activeHours: "9 AM - 5 PM" };
+
     if (req.app.locals.useMemory) {
       if (memoryStore.users.some((user) => user.email === normalizedEmail)) {
         return res.status(409).json({ message: "Email is already registered" });
       }
-      const user = { id: createId(), name: name.trim(), email: normalizedEmail, passwordHash, createdAt: new Date() };
+      const user = { 
+        id: createId(), 
+        name: name.trim(), 
+        email: normalizedEmail, 
+        passwordHash, 
+        preferences: preferences ? { ...defaultPrefs, ...preferences } : defaultPrefs,
+        createdAt: new Date() 
+      };
       memoryStore.users.push(user);
       return res.status(201).json({ token: createToken(user), user: publicUser(user) });
     }
@@ -29,7 +38,12 @@ router.post("/register", async (req, res, next) => {
     const exists = await User.findOne({ email: normalizedEmail });
     if (exists) return res.status(409).json({ message: "Email is already registered" });
 
-    const user = await User.create({ name: name.trim(), email: normalizedEmail, passwordHash });
+    const user = await User.create({ 
+      name: name.trim(), 
+      email: normalizedEmail, 
+      passwordHash,
+      preferences: preferences ? { ...defaultPrefs, ...preferences } : defaultPrefs
+    });
     res.status(201).json({ token: createToken(user), user: publicUser(user) });
   } catch (error) {
     next(error);
@@ -72,18 +86,22 @@ router.get("/me", requireAuth, async (req, res, next) => {
 
 router.put("/preferences", requireAuth, async (req, res, next) => {
   try {
-    const preferences = req.body;
+    const { name, ...preferences } = req.body;
     
     if (req.app.locals.useMemory) {
       const user = memoryStore.users.find((u) => u.id === req.userId);
       if (!user) return res.status(404).json({ message: "User not found" });
+      if (name) user.name = name.trim();
       user.preferences = { ...user.preferences, ...preferences };
       return res.json(publicUser(user));
     }
     
+    const updateObj = { preferences };
+    if (name) updateObj.name = name.trim();
+    
     const user = await User.findByIdAndUpdate(
       req.userId,
-      { $set: { preferences } },
+      { $set: updateObj },
       { new: true, runValidators: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });

@@ -81,14 +81,34 @@ function useAuth() {
 
 function LandingPage({ onAuth }) {
   const [mode, setMode] = useState("register");
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ 
+    name: "", 
+    email: "", 
+    password: "",
+    goals: "",
+    workStyle: "Focused",
+    tone: "Professional",
+    focusArea: "General",
+    activeHours: "9 AM - 5 PM"
+  });
   const [loading, setLoading] = useState(false);
 
   async function submit(event, isDemo = false) {
     if (event) event.preventDefault();
     setLoading(true);
     try {
-      let payload = mode === "register" ? form : { email: form.email, password: form.password };
+      let payload = mode === "register" ? {
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        preferences: {
+          goals: form.goals,
+          workStyle: form.workStyle,
+          tone: form.tone,
+          focusArea: form.focusArea,
+          activeHours: form.activeHours
+        }
+      } : { email: form.email, password: form.password };
       let endpoint = `/auth/${mode}`;
       
       if (isDemo) {
@@ -105,7 +125,18 @@ function LandingPage({ onAuth }) {
           // If login fails for demo user, register them on the fly
           const registerData = await apiRequest("/auth/register", { 
             method: "POST", 
-            body: JSON.stringify({ name: "Demo User", email: "demo@flowpilot.ai", password: "password123" }) 
+            body: JSON.stringify({ 
+              name: "Demo User", 
+              email: "demo@flowpilot.ai", 
+              password: "password123",
+              preferences: {
+                goals: "Demoing FlowPilot OS",
+                workStyle: "Focused",
+                tone: "Professional",
+                focusArea: "General",
+                activeHours: "9 AM - 5 PM"
+              }
+            }) 
           });
           toast.success("Demo User created & logged in!");
           onAuth(registerData);
@@ -205,6 +236,53 @@ function LandingPage({ onAuth }) {
                 Password
                 <input required type="password" minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" className="mt-1 bg-black/20 focus:bg-black/40" />
               </label>
+              {mode === "register" && (
+                <div className="mt-2 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                  <p className="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3">AI Personalization (Optional)</p>
+                  <div className="grid gap-3">
+                    <label className="field-label mb-0">
+                      Productivity Goals
+                      <input value={form.goals} onChange={(e) => setForm({ ...form, goals: e.target.value })} placeholder="e.g. Master React, Finish thesis" className="mt-1 bg-black/20 text-xs py-1.5" />
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="field-label mb-0">
+                        Work Style
+                        <select value={form.workStyle} onChange={(e) => setForm({ ...form, workStyle: e.target.value })} className="mt-1 bg-black/20 text-xs py-1">
+                          <option>Focused</option>
+                          <option>Flexible</option>
+                          <option>Deep Work</option>
+                          <option>Collaborative</option>
+                        </select>
+                      </label>
+                      <label className="field-label mb-0">
+                        AI Tone
+                        <select value={form.tone} onChange={(e) => setForm({ ...form, tone: e.target.value })} className="mt-1 bg-black/20 text-xs py-1">
+                          <option>Professional</option>
+                          <option>Casual & Friendly</option>
+                          <option>Strict & Direct</option>
+                          <option>Pirate (Fun)</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="field-label mb-0">
+                        Focus Area
+                        <select value={form.focusArea} onChange={(e) => setForm({ ...form, focusArea: e.target.value })} className="mt-1 bg-black/20 text-xs py-1">
+                          <option>General</option>
+                          <option>Engineering / Coding</option>
+                          <option>Design</option>
+                          <option>Academics</option>
+                          <option>Business</option>
+                        </select>
+                      </label>
+                      <label className="field-label mb-0">
+                        Active Hours
+                        <input value={form.activeHours} onChange={(e) => setForm({ ...form, activeHours: e.target.value })} placeholder="9 AM - 5 PM" className="mt-1 bg-black/20 text-xs py-1.5" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <button className="primary-button mt-8 w-full shadow-[0_0_20px_rgba(103,232,249,0.3)]" disabled={loading}>
@@ -567,13 +645,13 @@ function Shell({ user, onLogout, onUpdateUser }) {
         {/* Main Content */}
         <section className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 xl:p-10">
           <div className="mx-auto max-w-6xl">
-            {view === "dashboard" && <Dashboard stats={stats} tasks={tasks} notes={notes} loading={loading} setView={setView} />}
-            {view === "assistant" && <AIComposer feature="chat" title="AI Workspace Assistant" placeholder="Ask FlowPilot to plan, summarize, prioritize, or brainstorm..." suggestions={aiSuggestions.chat} setTasks={setTasks} />}
+            {view === "dashboard" && <Dashboard stats={stats} tasks={tasks} notes={notes} loading={loading} setView={setView} user={user} />}
+            {view === "assistant" && <AIComposer feature="chat" title="AI Workspace Assistant" placeholder="Ask FlowPilot to plan, summarize, prioritize, or brainstorm..." suggestions={aiSuggestions.chat} setTasks={setTasks} user={user} />}
             {view === "tasks" && <Tasks tasks={tasks} setTasks={setTasks} loading={loading} />}
             {view === "notes" && <Notes notes={notes} setNotes={setNotes} loading={loading} />}
-            {view === "email" && <AIComposer feature="email" title="AI Email Generator" placeholder="Example: Write an internship application email for a frontend role..." suggestions={aiSuggestions.email} setTasks={setTasks} />}
-            {view === "workflow" && <AIComposer feature="workflow" title="AI Workflow Suggestions" placeholder="Example: I am preparing for exams and internship applications..." suggestions={aiSuggestions.workflow} setTasks={setTasks} />}
-            {view === "planner" && <Planner setTasks={setTasks} />}
+            {view === "email" && <AIComposer feature="email" title="AI Email Generator" placeholder="Example: Write an internship application email for a frontend role..." suggestions={aiSuggestions.email} setTasks={setTasks} user={user} />}
+            {view === "workflow" && <AIComposer feature="workflow" title="AI Workflow Suggestions" placeholder="Example: I am preparing for exams and internship applications..." suggestions={aiSuggestions.workflow} setTasks={setTasks} user={user} />}
+            {view === "planner" && <Planner setTasks={setTasks} user={user} />}
             {view === "settings" && <Settings user={user} onUpdateUser={onUpdateUser} />}
           </div>
         </section>
@@ -582,7 +660,7 @@ function Shell({ user, onLogout, onUpdateUser }) {
   );
 }
 
-function Dashboard({ stats, tasks, notes, loading, setView }) {
+function Dashboard({ stats, tasks, notes, loading, setView, user }) {
   const cards = [
     { label: "Completion rate", value: stats.rate, suffix: "%", icon: CheckCircle2, color: "text-emerald-400" },
     { label: "Active tasks", value: stats.total, suffix: "", icon: ClipboardList, color: "text-cyan-400" },
@@ -591,7 +669,10 @@ function Dashboard({ stats, tasks, notes, loading, setView }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-      <Header eyebrow="Command center" title="Today's workflow cockpit" />
+      <Header 
+        eyebrow={`Welcome back, ${user?.name || "Pilot"}`} 
+        title={user?.preferences?.goals ? `Focus: ${user.preferences.goals}` : "Today's workflow cockpit"} 
+      />
       
       <div className="grid gap-6 md:grid-cols-[250px_1fr]">
         <div className="glass-panel glow-hover flex flex-col items-center justify-center p-6 text-center">
@@ -1132,6 +1213,7 @@ function EmptyState({ text, icon: Icon = Inbox }) {
 
 function Settings({ user, onUpdateUser }) {
   const [loading, setLoading] = useState(false);
+  const [name, setName] = useState(user.name || "");
   const [preferences, setPreferences] = useState(user.preferences || {
     goals: "", workStyle: "Focused", tone: "Professional", focusArea: "General", activeHours: "9 AM - 5 PM"
   });
@@ -1140,9 +1222,12 @@ function Settings({ user, onUpdateUser }) {
     e.preventDefault();
     setLoading(true);
     try {
-      const updatedUser = await apiRequest("/auth/preferences", { method: "PUT", body: JSON.stringify(preferences) });
+      const updatedUser = await apiRequest("/auth/preferences", { 
+        method: "PUT", 
+        body: JSON.stringify({ name, ...preferences }) 
+      });
       onUpdateUser(updatedUser);
-      toast.success("Preferences saved securely.");
+      toast.success("Preferences and profile updated securely.");
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -1155,6 +1240,10 @@ function Settings({ user, onUpdateUser }) {
       <Header eyebrow="Personalization" title="AI Settings & Profile" />
       <Panel title="How AI should interact with you" icon={<SettingsIcon size={18} className="text-cyan-400" />}>
         <form onSubmit={savePreferences} className="grid gap-6 sm:grid-cols-2">
+          <label className="field-label col-span-full">
+            Full Name
+            <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Your Name" className="mt-1 bg-black/20" />
+          </label>
           <label className="field-label col-span-full">
             Productivity Goals
             <input value={preferences.goals} onChange={(e) => setPreferences({...preferences, goals: e.target.value})} placeholder="e.g. Master React, Finish hackathon, Write thesis..." className="mt-1 bg-black/20" />
@@ -1198,8 +1287,11 @@ function Settings({ user, onUpdateUser }) {
   );
 }
 
-function Planner({ setTasks }) {
-  const [form, setForm] = useState({ deadline: "End of week", goal: "Complete the landing page frontend" });
+function Planner({ setTasks, user }) {
+  const [form, setForm] = useState({ 
+    deadline: "End of week", 
+    goal: user?.preferences?.goals || "Complete the landing page frontend" 
+  });
   const [result, setResult] = useState("");
   const [provider, setProvider] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
